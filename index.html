@@ -6,7 +6,6 @@
   <title>协作地图</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     #map { height: 100vh; width: 100vw; }
@@ -53,12 +52,16 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- 微信云开发 Web SDK -->
+  <script src="https://imgcache.qq.com/qcloud/tcbjs/2.1.0/tcb.js"></script>
   <script>
-    // ===== 这一行只保留一次！ =====
-    const SUPABASE_URL = 'https://heunqjcevljdzrjiwofz.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhldW5xamNldmxqZHpyaml3b2Z6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzk5OTMsImV4cCI6MjA5MjcxNTk5M30.VASoa36xGg983W6nrXaG1cRV-ye6-ePuKab2ZP_9P1o';
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    // ===== 注意上面变量名改成了 supabaseClient，避免和你之前重复定义冲突 =====
+    // ===== 只需要改这一行！ =====
+    const ENV_ID = 'map-db-d7gjvpaz87d9fc874';
+    
+    // 初始化云开发
+    const app = tcb.init({ env: ENV_ID });
+    const db = app.database();
+    // ===========================
 
     const map = L.map('map').setView([31.2304, 121.4737], 13);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -96,41 +99,49 @@
         return;
       }
 
-      const { error } = await supabaseClient.from('markers').insert({
-        lat: pendingLatLng.lat,
-        lng: pendingLatLng.lng,
-        title: title,
-        note: note,
-        user_name: userName
-      });
+      // 先进行匿名登录
+      const auth = app.auth();
+      await auth.anonymousAuthProvider().signIn();
 
-      if (error) {
-        alert('保存失败: ' + error.message);
-      } else {
+      try {
+        await db.collection('markers').add({
+          lat: pendingLatLng.lat,
+          lng: pendingLatLng.lng,
+          title: title,
+          note: note,
+          user_name: userName,
+          created_at: new Date()
+        });
         closeForm();
         document.getElementById('titleInput').value = '';
         document.getElementById('noteInput').value = '';
         document.getElementById('nameInput').value = '';
+        loadMarkers();
+      } catch (error) {
+        alert('保存失败: ' + error.message);
       }
     }
     window.submitMarker = submitMarker;
 
     async function loadMarkers() {
-      const { data } = await supabaseClient.from('markers').select('*');
-      if (data) {
-        data.forEach(addMarkerToMap);
+      try {
+        const res = await db.collection('markers')
+          .orderBy('created_at', 'desc')
+          .limit(100)
+          .get();
+        
+        // 清除地图上现有标记
+        map.eachLayer((layer) => {
+          if (layer instanceof L.Marker) {
+            map.removeLayer(layer);
+          }
+        });
+        
+        res.data.forEach(addMarkerToMap);
+      } catch (error) {
+        console.error('加载标记失败:', error);
       }
     }
-
-    supabaseClient
-      .channel('markers-changes')
-      .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'markers' },
-        (payload) => {
-          addMarkerToMap(payload.new);
-        }
-      )
-      .subscribe();
 
     function addMarkerToMap(marker) {
       const popupContent = `
@@ -142,6 +153,14 @@
         .addTo(map)
         .bindPopup(popupContent);
     }
+
+    // 实时监听（微信云开发支持数据库变更监听）
+    db.collection('markers').watch({
+      onChange: () => {
+        loadMarkers();
+      },
+      onError: () => {}
+    });
 
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition((pos) => {
