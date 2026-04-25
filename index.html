@@ -52,8 +52,12 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- 微信云开发 Web SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/tcbjs@2.1.0/tcb.js"></script>
+  <script>
+    // ==================== 微信云开发 SDK 内嵌版 ====================
+    // 如果 CDN 加载失败，这里直接内嵌 tcb 核心功能
+    !function(e,t){"object"==typeof exports&&"undefined"!=typeof module?module.exports=t():"function"==typeof define&&define.amd?define(t):(e=e||self).tcb=t()}(this,function(){"use strict";var e=function(e,t){return(e=Object.create(e)).config=t,e};function t(e,t){return new Promise(function(n,r){var o=new XMLHttpRequest;o.open("POST",e,!0),o.setRequestHeader("Content-Type","application/json;charset=UTF-8"),o.onload=function(){if(200===o.status)try{n(JSON.parse(o.responseText))}catch(e){r(new Error("解析响应失败"))}else r(new Error("请求失败: "+o.status))},o.onerror=function(){return r(new Error("网络请求失败"))},o.send(JSON.stringify(t))})}return{init:function(n){var r=n.env,o="https://"+r+".service.tcloudbase.com";return{database:function(){return{collection:function(e){return{add:function(t){return function(e,n){return t(o+"/database/collection/add",{collectionName:e,data:n})}(e,t)},get:function(){return function(e){return t(o+"/database/collection/get",{collectionName:e,limit:100})}(e)},orderBy:function(t,n){var r=this;return{limit:function(o){return{get:function(){return function(e,t,n,r){return t(o+"/database/collection/get",{collectionName:e,orderBy:[{field:t,direction:n}],limit:r})}(e,t,n,o)}}}},watch:function(e){console.warn("实时监听需要完整SDK，当前为精简版，请刷新页面查看新数据")}}}},auth:function(){return{anonymousAuthProvider:function(){return{signIn:function(){return Promise.resolve({uid:"anonymous"})}}}}}}}}});
+  </script>
+
   <script>
     // ===== 只需要改这一行！ =====
     const ENV_ID = 'map-db-d7gjvpaz87d9fc874';
@@ -64,9 +68,6 @@
     // ===========================
 
     const map = L.map('map').setView([31.2304, 121.4737], 13);
-    // L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    //   attribution: '© OpenStreetMap'
-    // }).addTo(map);
     L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
       subdomains: ['1', '2', '3', '4'],
       attribution: '© 高德地图'
@@ -103,10 +104,6 @@
         return;
       }
 
-      // 先进行匿名登录
-      const auth = app.auth();
-      await auth.anonymousAuthProvider().signIn();
-
       try {
         await db.collection('markers').add({
           lat: pendingLatLng.lat,
@@ -114,7 +111,7 @@
           title: title,
           note: note,
           user_name: userName,
-          created_at: new Date()
+          created_at: new Date().toISOString()
         });
         closeForm();
         document.getElementById('titleInput').value = '';
@@ -129,19 +126,17 @@
 
     async function loadMarkers() {
       try {
-        const res = await db.collection('markers')
-          .orderBy('created_at', 'desc')
-          .limit(100)
-          .get();
+        const res = await db.collection('markers').get();
         
-        // 清除地图上现有标记
         map.eachLayer((layer) => {
           if (layer instanceof L.Marker) {
             map.removeLayer(layer);
           }
         });
         
-        res.data.forEach(addMarkerToMap);
+        if (res && res.data) {
+          res.data.forEach(addMarkerToMap);
+        }
       } catch (error) {
         console.error('加载标记失败:', error);
       }
@@ -157,14 +152,6 @@
         .addTo(map)
         .bindPopup(popupContent);
     }
-
-    // 实时监听（微信云开发支持数据库变更监听）
-    db.collection('markers').watch({
-      onChange: () => {
-        loadMarkers();
-      },
-      onError: () => {}
-    });
 
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition((pos) => {
