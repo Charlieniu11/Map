@@ -2,191 +2,365 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>协作地图</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
+  <title>面包店协作地图</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    #map { height: 100vh; width: 100vw; }
-    .add-btn {
-      position: fixed; bottom: 30px; right: 20px; z-index: 1000;
-      width: 56px; height: 56px; border-radius: 50%;
-      background: #2196F3; color: white; border: none;
-      font-size: 28px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    #map { height:100vh; width:100vw; }
+
+    /* 登录面板 */
+    #authPanel {
+      position:fixed; top:0; left:0; right:0; bottom:0;
+      background:white; z-index:9999;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      padding:20px;
     }
-    .form-panel {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 1001;
-      background: white; padding: 20px; border-radius: 20px 20px 0 0;
-      box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
-      display: none;
+    #authPanel input { width:100%; padding:12px; margin:10px 0; font-size:16px; border:1px solid #ddd; border-radius:8px; }
+    #authPanel button { width:100%; padding:14px; background:#2196F3; color:white; border:none; border-radius:8px; font-size:18px; }
+
+    /* 浮动按钮：统计面板 */
+    .float-btn {
+      position:fixed; z-index:1000; width:50px; height:50px; border-radius:50%;
+      background:#2196F3; color:white; border:none; font-size:20px;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
     }
-    .form-panel input, .form-panel textarea {
-      width: 100%; padding: 12px; margin-bottom: 12px;
-      border: 1px solid #ddd; border-radius: 10px; font-size: 16px;
+    #btnStat { bottom:100px; right:20px; }
+    #btnAddShop { bottom:180px; right:20px; }
+    #btnQuarter { bottom:260px; right:20px; }
+
+    /* 通用弹出面板 */
+    .panel {
+      position:fixed; bottom:0; left:0; right:0; z-index:1001;
+      background:white; padding:20px;
+      border-radius:20px 20px 0 0;
+      box-shadow:0 -4px 20px rgba(0,0,0,0.2);
+      max-height:80vh; overflow-y:auto;
+      display:none;
     }
-    .form-panel button {
-      width: 100%; padding: 14px; background: #2196F3;
-      color: white; border: none; border-radius: 10px;
-      font-size: 18px; cursor: pointer;
+    .panel input, .panel textarea, .panel select {
+      width:100%; padding:12px; margin-bottom:12px;
+      border:1px solid #ddd; border-radius:8px; font-size:16px;
     }
+    .panel button { width:100%; padding:12px; background:#2196F3; color:white; border:none; border-radius:8px; font-size:16px; margin-top:5px; }
+    .panel .close-btn { background:#999; }
+    .panel h3 { margin-bottom:15px; }
+
+    /* 统计表格 */
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th,td { border:1px solid #eee; padding:8px; text-align:center; }
+    th { background:#f5f5f5; }
+
+    .legend { position:fixed; bottom:30px; left:20px; z-index:1000; background:white; padding:8px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2); font-size:14px; }
+    .legend span { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:4px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <button class="add-btn" onclick="openForm()">+</button>
 
-  <div class="form-panel" id="formPanel">
-    <h3 style="margin-bottom:12px;">添加标记</h3>
-    <input type="text" id="titleInput" placeholder="标题（如：宝藏咖啡店）">
-    <textarea id="noteInput" rows="3" placeholder="备注（如：老板养了3只猫）"></textarea>
-    <input type="text" id="nameInput" placeholder="你的名字">
-    <div style="display:flex;gap:10px;">
-      <button onclick="submitMarker()" style="flex:1;">保存</button>
-      <button onclick="closeForm()" style="flex:1;background:#999;">取消</button>
-    </div>
+  <!-- 登录/注册 -->
+  <div id="authPanel">
+    <h2>面包店协作地图</h2>
+    <input type="email" id="email" placeholder="邮箱">
+    <input type="password" id="password" placeholder="密码">
+    <button onclick="handleLogin()">登录</button>
+    <button onclick="handleRegister()" style="background:#4CAF50; margin-top:10px;">注册</button>
+    <p style="margin-top:10px; font-size:14px; color:#666;">注册后自动登录</p>
   </div>
 
-  <script src="https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <!-- 统计面板 -->
+  <div class="panel" id="statPanel">
+    <h3>各省市店铺统计</h3>
+    <div id="statContent">加载中...</div>
+    <button class="close-btn" onclick="closePanel('statPanel')">关闭</button>
+  </div>
+
+  <!-- 新增店铺面板 -->
+  <div class="panel" id="addShopPanel">
+    <h3>新增店铺</h3>
+    <input type="text" id="shopName" placeholder="店铺名称">
+    <input type="text" id="shopAddress" placeholder="地址">
+    <input type="text" id="shopProvince" placeholder="省">
+    <input type="text" id="shopCity" placeholder="市">
+    <input type="text" id="shopDistrict" placeholder="县/区">
+    <input type="text" id="shopContact" placeholder="负责人">
+    <input type="text" id="shopProducts" placeholder="使用产品">
+    <p style="font-size:14px; color:#666;">先在地图上长按或点击标记位置，然后点这里新增。</p>
+    <button onclick="addNewShop()">提交</button>
+    <button class="close-btn" onclick="closePanel('addShopPanel')">取消</button>
+  </div>
+
+  <!-- 打卡面板（弹出在标记点击时） -->
+  <div class="panel" id="checkinPanel">
+    <h3>打卡</h3>
+    <p><strong id="checkinShopName"></strong></p>
+    <label>状态：</label>
+    <select id="checkinStatus">
+      <option value="green">绿色 - 使用我司产品</option>
+      <option value="yellow">黄色 - 打卡但未使用</option>
+      <option value="red">红色 - 未打卡(默认)</option>
+    </select>
+    <textarea id="checkinNote" rows="2" placeholder="备注（可选）"></textarea>
+    <button onclick="doCheckin()">确认打卡</button>
+    <button class="close-btn" onclick="closePanel('checkinPanel')">取消</button>
+  </div>
+
+  <!-- 季度更新面板 -->
+  <div class="panel" id="quarterPanel">
+    <h3>季度更新日志</h3>
+    <div id="quarterContent">加载中...</div>
+    <button class="close-btn" onclick="closePanel('quarterPanel')">关闭</button>
+  </div>
+
+  <!-- 图例 -->
+  <div class="legend">
+    <span style="background:green;"></span> 使用我司<br>
+    <span style="background:yellow;"></span> 已打卡未使用<br>
+    <span style="background:red;"></span> 未打卡
+  </div>
+
+  <!-- 浮动按钮 -->
+  <button class="float-btn" id="btnStat" onclick="openStatPanel()">📊</button>
+  <button class="float-btn" id="btnAddShop" onclick="prepareAddShop()">➕</button>
+  <button class="float-btn" id="btnQuarter" onclick="openQuarterPanel()">📆</button>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script>
-    // ===== 只改这一个 ID =====
-    const ENV = 'map-db-d7gjvpaz87d9fc874';
-    const BASE = `https://${ENV}.service.tcloudbase.com`;
-    // ==========================
+    // ==================== 你的 Supabase 配置 ====================
+    const SUPABASE_URL = 'https://heunqjcevljdzrjiwofz.supabase.co'; // 比如 https://heunqjcevljdzrjiwofz.supabase.co
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhldW5xamNldmxqZHpyaml3b2Z6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzk5OTMsImV4cCI6MjA5MjcxNTk5M30.VASoa36xGg983W6nrXaG1cRV-ye6-ePuKab2ZP_9P1o';
+    // ===========================================================
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // 全局 access_token
-    let accessToken = '';
+    // 全局变量
+    let map;
+    let currentUser = null;
+    let selectedLatLng = null;      // 用于新增店铺时暂存坐标
+    let selectedShopId = null;      // 用于打卡
 
-    // 匿名登录，获取 access_token
-    async function signIn() {
-      const res = await fetch(`${BASE}/auth/v1/signin/anonymously`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await res.json();
-      accessToken = data.access_token;
+    // ==================== 1. 认证 ====================
+    async function handleLogin() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) alert('登录失败: ' + error.message);
+      else hideAuthPanel();
     }
 
-    // 封装数据库请求
-    async function dbRequest(path, options = {}) {
-      if (!accessToken) await signIn();
-      const url = `${BASE}/database/v1/${path}`;
-      const res = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-          ...(options.headers || {})
-        }
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || '请求失败');
+    async function handleRegister() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) alert('注册失败: ' + error.message);
+      else {
+        alert('注册成功！已自动登录。');
+        hideAuthPanel();
       }
-      return res.json();
     }
 
-    // 初始化地图（高德瓦片，国内秒开）
-    const map = L.map('map').setView([31.2304, 121.4737], 13);
-    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-      subdomains: ['1', '2', '3', '4'],
-      attribution: '© 高德地图'
-    }).addTo(map);
+    function hideAuthPanel() {
+      document.getElementById('authPanel').style.display = 'none';
+    }
 
-    let pendingLatLng = null;
-
-    map.on('click', (e) => {
-      pendingLatLng = e.latlng;
-      openForm();
+    // 检查初始登录状态
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        currentUser = session.user;
+        hideAuthPanel();
+        loadShops();
+      }
     });
 
-    function openForm() {
-      document.getElementById('formPanel').style.display = 'block';
-      document.querySelector('.add-btn').style.display = 'none';
+    // ==================== 2. 地图初始化 ====================
+    function initMap() {
+      map = L.map('map').setView([31.2304, 121.4737], 6);
+      L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: ['1','2','3','4'],
+        attribution: '© 高德地图'
+      }).addTo(map);
+
+      // 长按地图获取坐标（用于新增店铺）
+      map.on('click', function(e) {
+        selectedLatLng = e.latlng;
+        // 如果新增面板打开，自动填入坐标提示（不做别的）
+      });
     }
 
-    function closeForm() {
-      document.getElementById('formPanel').style.display = 'none';
-      document.querySelector('.add-btn').style.display = 'flex';
-      pendingLatLng = null;
+    // ==================== 3. 店铺标记与颜色 ====================
+    async function loadShops() {
+      if (!currentUser) return;
+      const { data, error } = await supabase.from('shops').select('*').eq('is_deleted', false);
+      if (error) { console.error(error); return; }
+
+      // 清除旧标记
+      map.eachLayer(layer => { if (layer instanceof L.Marker) map.removeLayer(layer); });
+
+      data.forEach(shop => {
+        const color = shop.status === 'green' ? 'green' : (shop.status === 'yellow' ? 'yellow' : 'red');
+        const marker = L.circleMarker([shop.lat, shop.lng], {
+          radius: 8,
+          fillColor: color,
+          color: '#333',
+          weight: 1,
+          fillOpacity: 0.8
+        }).addTo(map);
+
+        // 绑定弹窗
+        marker.bindPopup(`
+          <strong>${shop.name}</strong><br>
+          <small>${shop.address || ''}</small><br>
+          状态：${getStatusText(shop.status)}<br>
+          <button onclick="openCheckin(${shop.id}, '${shop.name}')">打卡</button>
+        `);
+      });
     }
-    window.openForm = openForm;
-    window.closeForm = closeForm;
 
-    async function submitMarker() {
-      const title = document.getElementById('titleInput').value || '未命名';
-      const note = document.getElementById('noteInput').value || '';
-      const userName = document.getElementById('nameInput').value || '匿名';
+    function getStatusText(status) {
+      if (status === 'green') return '🟢 使用我司产品';
+      if (status === 'yellow') return '🟡 打卡未使用';
+      return '🔴 未打卡';
+    }
 
-      if (!pendingLatLng) {
-        alert('请先在地图上点击一个位置');
+    // ==================== 4. 打卡 ====================
+    function openCheckin(shopId, shopName) {
+      selectedShopId = shopId;
+      document.getElementById('checkinShopName').innerText = shopName;
+      openPanel('checkinPanel');
+    }
+
+    async function doCheckin() {
+      if (!selectedShopId || !currentUser) return;
+      const status = document.getElementById('checkinStatus').value;
+      const note = document.getElementById('checkinNote').value;
+
+      // 插入打卡记录
+      const { error: checkinError } = await supabase.from('checkins').insert({
+        shop_id: selectedShopId,
+        user_id: currentUser.id,
+        status: status,
+        note: note
+      });
+      if (checkinError) { alert('打卡失败: ' + checkinError.message); return; }
+
+      // 更新店铺状态
+      const { error: updateError } = await supabase.from('shops')
+        .update({ status: status, updated_at: new Date() })
+        .eq('id', selectedShopId);
+      if (updateError) alert('状态更新失败: ' + updateError.message);
+      else {
+        alert('打卡成功！');
+        closePanel('checkinPanel');
+        loadShops(); // 刷新地图
+      }
+    }
+
+    // ==================== 5. 新增店铺 ====================
+    function prepareAddShop() {
+      if (!selectedLatLng) {
+        alert('请先在地图上点击你要新增店铺的位置');
+        return;
+      }
+      openPanel('addShopPanel');
+    }
+
+    async function addNewShop() {
+      if (!currentUser) return;
+      const name = document.getElementById('shopName').value.trim();
+      if (!name) { alert('请输入店铺名称'); return; }
+
+      const lat = selectedLatLng?.lat;
+      const lng = selectedLatLng?.lng;
+      if (!lat || !lng) { alert('请先在地图上点击位置'); return; }
+
+      const newShop = {
+        name,
+        address: document.getElementById('shopAddress').value,
+        province: document.getElementById('shopProvince').value,
+        city: document.getElementById('shopCity').value,
+        district: document.getElementById('shopDistrict').value,
+        contact_person: document.getElementById('shopContact').value,
+        products: document.getElementById('shopProducts').value,
+        lat, lng,
+        status: 'red',  // 默认未打卡
+        is_deleted: false
+      };
+
+      const { error } = await supabase.from('shops').insert(newShop);
+      if (error) { alert('新增失败: ' + error.message); return; }
+
+      alert('店铺新增成功！');
+      closePanel('addShopPanel');
+      loadShops();
+    }
+
+    // ==================== 6. 统计面板 ====================
+    async function openStatPanel() {
+      openPanel('statPanel');
+      document.getElementById('statContent').innerHTML = '加载中...';
+      const { data, error } = await supabase.from('shops').select('province, city, status').eq('is_deleted', false);
+      if (error) { document.getElementById('statContent').innerHTML = '加载失败'; return; }
+
+      // 按省-市聚合
+      const stats = {};
+      data.forEach(row => {
+        const key = `${row.province || '未知省'}-${row.city || '未知市'}`;
+        if (!stats[key]) stats[key] = { green:0, yellow:0, red:0 };
+        if (row.status === 'green') stats[key].green++;
+        else if (row.status === 'yellow') stats[key].yellow++;
+        else stats[key].red++;
+      });
+
+      let html = '<table><tr><th>省-市</th><th>🟢</th><th>🟡</th><th>🔴</th></tr>';
+      Object.entries(stats).forEach(([city, cnt]) => {
+        html += `<tr><td>${city}</td><td>${cnt.green}</td><td>${cnt.yellow}</td><td>${cnt.red}</td></tr>`;
+      });
+      html += '</table>';
+      html += '<p style="margin-top:10px;">* 若未显示省/市，请完善店铺信息</p>';
+      document.getElementById('statContent').innerHTML = html;
+    }
+
+    // ==================== 7. 季度更新面板 ====================
+    async function openQuarterPanel() {
+      openPanel('quarterPanel');
+      document.getElementById('quarterContent').innerHTML = '加载中...';
+      const { data, error } = await supabase.from('shop_updates').select('*').order('created_at', { ascending: false });
+      if (error) { document.getElementById('quarterContent').innerHTML = '加载失败'; return; }
+      if (!data.length) {
+        document.getElementById('quarterContent').innerHTML = '暂无季度更新数据';
         return;
       }
 
-      try {
-        await dbRequest('collection/markers/add', {
-          method: 'POST',
-          body: JSON.stringify({
-            lat: pendingLatLng.lat,
-            lng: pendingLatLng.lng,
-            title: title,
-            note: note,
-            user_name: userName,
-            created_at: new Date().toISOString()
-          })
-        });
-        closeForm();
-        document.getElementById('titleInput').value = '';
-        document.getElementById('noteInput').value = '';
-        document.getElementById('nameInput').value = '';
-        loadMarkers();
-      } catch (error) {
-        alert('保存失败: ' + error.message);
-      }
-    }
-    window.submitMarker = submitMarker;
-
-    async function loadMarkers() {
-      try {
-        const res = await dbRequest('collection/markers/get?limit=100');
-        // 清除旧标记
-        map.eachLayer((layer) => {
-          if (layer instanceof L.Marker) {
-            map.removeLayer(layer);
-          }
-        });
-        const markers = res.data || [];
-        markers.forEach(m => {
-          const popupContent = `
-            <strong>${m.title}</strong><br>
-            ${m.note ? '<em>' + m.note + '</em><br>' : ''}
-            <small>—— ${m.user_name} · ${new Date(m.created_at).toLocaleDateString()}</small>
-          `;
-          L.marker([m.lat, m.lng]).addTo(map).bindPopup(popupContent);
-        });
-      } catch (error) {
-        console.error('加载标记失败:', error);
-      }
-    }
-
-    // 定位
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        map.setView([pos.coords.latitude, pos.coords.longitude], 15);
+      let html = '';
+      data.forEach(up => {
+        html += `<div style="margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+          <strong>${up.quarter}</strong> (${new Date(up.created_at).toLocaleDateString()})<br>
+          新增店铺ID：${JSON.stringify(up.new_shops)}<br>
+          消失店铺ID：${JSON.stringify(up.removed_shops)}
+          ${up.detail ? '<br>备注：'+up.detail : ''}
+        </div>`;
       });
+      document.getElementById('quarterContent').innerHTML = html;
     }
 
-    // 初始加载
-    loadMarkers();
+    // ==================== 辅助函数 ====================
+    function openPanel(id) { document.getElementById(id).style.display = 'block'; }
+    function closePanel(id) { document.getElementById(id).style.display = 'none'; }
 
-    // PWA
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
-    }
+    // ==================== 启动 ====================
+    initMap();
+    // 检查已登录状态
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        currentUser = session.user;
+        hideAuthPanel();
+        loadShops();
+      }
+    });
   </script>
 </body>
 </html>
