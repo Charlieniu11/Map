@@ -16,6 +16,9 @@
       background: #2196F3; color: white; border: none;
       font-size: 28px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .form-panel {
       position: fixed; bottom: 0; left: 0; right: 0; z-index: 1001;
@@ -51,122 +54,106 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-  // === 配置 Supabase（用你自己的替换下面两行）===
-  const SUPABASE_URL = 'https://heunqjcevljdzrjiwofz.supabase.co';
-  const SUPABASE_ANON_KEY = 'sb_publishable_bPA0yBzriCjx-Cbi07Fa2A_Pkj0PPy1';
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // ===== 这一行只保留一次！ =====
+    const SUPABASE_URL = 'https://heunqjcevljdzrjiwofz.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_bPA0yBzriCjx-Cbi07Fa2A_Pkj0PPy1';
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // ===== 注意上面变量名改成了 supabaseClient，避免和你之前重复定义冲突 =====
 
-  // === 地图初始化 ===
-  const map = L.map('map').setView([31.2304, 121.4737], 13);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap'
-  }).addTo(map);
+    const map = L.map('map').setView([31.2304, 121.4737], 13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
 
-  let pendingLatLng = null;
+    let pendingLatLng = null;
 
-  // === 点击地图，记录位置并打开表单 ===
-  map.on('click', (e) => {
-    pendingLatLng = e.latlng;
-    openForm();
-  });
-
-  // ========== 关键修复：表单的显示与隐藏 ==========
-
-  function openForm() {
-    document.getElementById('formPanel').style.display = 'block';
-    // 同时隐藏加号按钮，防止误触
-    document.querySelector('.add-btn').style.display = 'none';
-  }
-
-  function closeForm() {
-    document.getElementById('formPanel').style.display = 'none';
-    // 让加号按钮重新显示出来
-    document.querySelector('.add-btn').style.display = 'flex';  // 改成了 flex 以支持居中
-    pendingLatLng = null;
-  }
-
-  // 把这两个函数挂到全局，让 onclick 能找到
-  window.openForm = openForm;
-  window.closeForm = closeForm;
-
-  // ========== 提交标记 ==========
-
-  async function submitMarker() {
-    const title = document.getElementById('titleInput').value || '未命名';
-    const note = document.getElementById('noteInput').value || '';
-    const userName = document.getElementById('nameInput').value || '匿名';
-
-    if (!pendingLatLng) {
-      alert('请先在地图上点击一个位置');
-      return;
-    }
-
-    const { error } = await supabase.from('markers').insert({
-      lat: pendingLatLng.lat,
-      lng: pendingLatLng.lng,
-      title: title,
-      note: note,
-      user_name: userName
+    map.on('click', (e) => {
+      pendingLatLng = e.latlng;
+      openForm();
     });
 
-    if (error) {
-      alert('保存失败: ' + error.message);
-    } else {
-      closeForm();
-      // 清空输入框
-      document.getElementById('titleInput').value = '';
-      document.getElementById('noteInput').value = '';
-      document.getElementById('nameInput').value = '';
+    function openForm() {
+      document.getElementById('formPanel').style.display = 'block';
+      document.querySelector('.add-btn').style.display = 'none';
     }
-  }
-  window.submitMarker = submitMarker;
 
-  // ========== 加载与实时更新标记 ==========
-
-  async function loadMarkers() {
-    const { data, error } = await supabase.from('markers').select('*');
-    if (data) {
-      data.forEach(addMarkerToMap);
+    function closeForm() {
+      document.getElementById('formPanel').style.display = 'none';
+      document.querySelector('.add-btn').style.display = 'flex';
+      pendingLatLng = null;
     }
-  }
 
-  supabase
-    .channel('markers-changes')
-    .on('postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'markers' },
-      (payload) => {
-        addMarkerToMap(payload.new);
+    window.openForm = openForm;
+    window.closeForm = closeForm;
+
+    async function submitMarker() {
+      const title = document.getElementById('titleInput').value || '未命名';
+      const note = document.getElementById('noteInput').value || '';
+      const userName = document.getElementById('nameInput').value || '匿名';
+
+      if (!pendingLatLng) {
+        alert('请先在地图上点击一个位置');
+        return;
       }
-    )
-    .subscribe();
 
-  function addMarkerToMap(marker) {
-    const popupContent = `
-      <strong>${marker.title}</strong><br>
-      ${marker.note ? '<em>' + marker.note + '</em><br>' : ''}
-      <small>—— ${marker.user_name} · ${new Date(marker.created_at).toLocaleDateString()}</small>
-    `;
-    L.marker([marker.lat, marker.lng])
-      .addTo(map)
-      .bindPopup(popupContent);
-  }
+      const { error } = await supabaseClient.from('markers').insert({
+        lat: pendingLatLng.lat,
+        lng: pendingLatLng.lng,
+        title: title,
+        note: note,
+        user_name: userName
+      });
 
-  // ========== 定位到当前位置 ==========
-  if ('geolocation' in navigator) {
-    navigator.geolocation.getCurrentPosition((pos) => {
-      map.setView([pos.coords.latitude, pos.coords.longitude], 15);
-    }, () => {
-      console.log('无法获取位置');
-    });
-  }
+      if (error) {
+        alert('保存失败: ' + error.message);
+      } else {
+        closeForm();
+        document.getElementById('titleInput').value = '';
+        document.getElementById('noteInput').value = '';
+        document.getElementById('nameInput').value = '';
+      }
+    }
+    window.submitMarker = submitMarker;
 
-  // ========== 初始加载已有标记 ==========
-  loadMarkers();
+    async function loadMarkers() {
+      const { data } = await supabaseClient.from('markers').select('*');
+      if (data) {
+        data.forEach(addMarkerToMap);
+      }
+    }
 
-  // ========== PWA Service Worker ==========
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js');
-  }
-</script>
+    supabaseClient
+      .channel('markers-changes')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'markers' },
+        (payload) => {
+          addMarkerToMap(payload.new);
+        }
+      )
+      .subscribe();
+
+    function addMarkerToMap(marker) {
+      const popupContent = `
+        <strong>${marker.title}</strong><br>
+        ${marker.note ? '<em>' + marker.note + '</em><br>' : ''}
+        <small>—— ${marker.user_name} · ${new Date(marker.created_at).toLocaleDateString()}</small>
+      `;
+      L.marker([marker.lat, marker.lng])
+        .addTo(map)
+        .bindPopup(popupContent);
+    }
+
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        map.setView([pos.coords.latitude, pos.coords.longitude], 15);
+      });
+    }
+
+    loadMarkers();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
 </body>
 </html>
