@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>协作地图</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    #map { height: 100vh; width: 100vw; }
+    .add-btn {
+      position: fixed; bottom: 30px; right: 20px; z-index: 1000;
+      width: 56px; height: 56px; border-radius: 50%;
+      background: #2196F3; color: white; border: none;
+      font-size: 28px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      cursor: pointer;
+    }
+    .form-panel {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 1001;
+      background: white; padding: 20px; border-radius: 20px 20px 0 0;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+      display: none;
+    }
+    .form-panel input, .form-panel textarea {
+      width: 100%; padding: 12px; margin-bottom: 12px;
+      border: 1px solid #ddd; border-radius: 10px; font-size: 16px;
+    }
+    .form-panel button {
+      width: 100%; padding: 14px; background: #2196F3;
+      color: white; border: none; border-radius: 10px;
+      font-size: 18px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <button class="add-btn" onclick="openForm()">+</button>
+
+  <div class="form-panel" id="formPanel">
+    <h3 style="margin-bottom:12px;">添加标记</h3>
+    <input type="text" id="titleInput" placeholder="标题（如：宝藏咖啡店）">
+    <textarea id="noteInput" rows="3" placeholder="备注（如：老板养了3只猫）"></textarea>
+    <input type="text" id="nameInput" placeholder="你的名字">
+    <div style="display:flex;gap:10px;">
+      <button onclick="submitMarker()" style="flex:1;">保存</button>
+      <button onclick="closeForm()" style="flex:1;background:#999;">取消</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // === 配置 Supabase ===
+    const SUPABASE_URL = 'https://aws-1-ap-southeast-1.pooler.supabase.com';
+    const SUPABASE_ANON_KEY = 'sb_publishable_bPA0yBzriCjx-Cbi07Fa2A_Pkj0PPy1';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // === 地图初始化 ===
+    const map = L.map('map').setView([31.2304, 121.4737], 13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    let pendingLatLng = null; // 暂存用户点击的位置
+
+    // === 点击地图，准备添加标记 ===
+    map.on('click', (e) => {
+      pendingLatLng = e.latlng;
+      openForm();
+    });
+
+    // === 打开表单 ===
+    function openForm() {
+      document.getElementById('formPanel').style.display = 'block';
+      document.querySelector('.add-btn').style.display = 'none';
+    }
+
+    // === 关闭表单 ===
+    function closeForm() {
+      document.getElementById('formPanel').style.display = 'none';
+      document.querySelector('.add-btn').style.display = 'block';
+      pendingLatLng = null;
+    }
+    window.closeForm = closeForm;
+    window.openForm = openForm;
+
+    // === 提交标记到 Supabase ===
+    async function submitMarker() {
+      const title = document.getElementById('titleInput').value || '未命名';
+      const note = document.getElementById('noteInput').value || '';
+      const userName = document.getElementById('nameInput').value || '匿名';
+
+      if (!pendingLatLng) {
+        alert('请先在地图上点击一个位置');
+        return;
+      }
+
+      const { error } = await supabase.from('markers').insert({
+        lat: pendingLatLng.lat,
+        lng: pendingLatLng.lng,
+        title: title,
+        note: note,
+        user_name: userName
+      });
+
+      if (error) {
+        alert('保存失败: ' + error.message);
+      } else {
+        closeForm();
+        // 清空输入
+        document.getElementById('titleInput').value = '';
+        document.getElementById('noteInput').value = '';
+        document.getElementById('nameInput').value = '';
+      }
+    }
+    window.submitMarker = submitMarker;
+
+    // === 加载已有标记 ===
+    async function loadMarkers() {
+      const { data, error } = await supabase.from('markers').select('*');
+      if (error) return;
+      data.forEach(addMarkerToMap);
+    }
+
+    // === 实时监听新增标记（别人加的立刻显示） ===
+    supabase
+      .channel('markers-changes')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'markers' },
+        (payload) => {
+          addMarkerToMap(payload.new);
+        }
+      )
+      .subscribe();
+
+    // === 在地图上画一个标记 ===
+    function addMarkerToMap(marker) {
+      const popupContent = `
+        <strong>${marker.title}</strong><br>
+        ${marker.note ? '<em>' + marker.note + '</em><br>' : ''}
+        <small>—— ${marker.user_name} · ${new Date(marker.created_at).toLocaleDateString()}</small>
+      `;
+      L.marker([marker.lat, marker.lng])
+        .addTo(map)
+        .bindPopup(popupContent);
+    }
+
+    // === 定位到自己 ===
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        map.setView([pos.coords.latitude, pos.coords.longitude], 15);
+      });
+    }
+
+    // === 初始化加载 ===
+    loadMarkers();
+
+    // === PWA Service Worker ===
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>
